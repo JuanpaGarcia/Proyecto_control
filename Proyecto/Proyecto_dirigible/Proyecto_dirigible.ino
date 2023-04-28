@@ -16,16 +16,21 @@
 
 //*****************************************************************************
 // Defines
-#define I2C_SCL_PIN     
-#define I2C_SDA_PIN 
-
+#define I2C_SCL_PIN 0
+#define I2C_SDA_PIN 0
+#define DELAY_PERIOD 5
 
 //*****************************************************************************
 
 
 //*****************************************************************************
 // Global variables
+//mpu global variables
 Adafruit_MPU6050 mpu;
+sensors_event_t a, g, temp; //Get new sensor events with the readings accel and gyro
+
+//Semaphores
+static SemaphoreHandle_t print_sem;     // Waits for parameter to be read
 
 //*****************************************************************************
 
@@ -35,24 +40,45 @@ Adafruit_MPU6050 mpu;
 // Producer: write a given number of times to shared buffer
 void mpu_get_data(void *parameters) 
 {
+  while(1)
+  {
+    mpu.getEvent(&a, &g, &temp);
+    vTaskDelay(DELAY_PERIOD / portTICK_PERIOD_MS);
+  }
+}
 
-
-  // Delete self task
-  vTaskDelete(NULL);
+void mpu_print_data(void *parameters) 
+{
+  while(1)
+  {
+    mpu.getEvent(&a, &g, &temp);
+    // Release the binary semaphore
+    xSemaphoreGive(print_sem);
+    vTaskDelay(DELAY_PERIOD / portTICK_PERIOD_MS);
+  }
 }
 
 // Consumer: continuously read from shared buffer
-void consumer(void *parameters) {
+void PID_motor_1(void *parameters) 
+{
 
-  int val;
-
-  // Read from buffer
-  while (1) {
-
-    // Critical section (accessing shared buffer and Serial)
-    val = buf[tail];
-    tail = (tail + 1) % BUF_SIZE;
-    Serial.println(val);
+  while (1) 
+  {
+    xSemaphoreTake(print_sem, portMAX_DELAY);
+    /* Print out the values */
+    Serial.print(a.acceleration.x);
+    Serial.print(",");
+    Serial.print(a.acceleration.y);
+    Serial.print(",");
+    Serial.print(a.acceleration.z);
+    Serial.print(", ");
+    Serial.print(g.gyro.x);
+    Serial.print(",");
+    Serial.print(g.gyro.y);
+    Serial.print(",");
+    Serial.print(g.gyro.z);
+    Serial.println("");
+    vTaskDelay(DELAY_PERIOD / portTICK_PERIOD_MS);
   }
 }
 
@@ -60,51 +86,33 @@ void consumer(void *parameters) {
 // Main (runs as its own task with priority 1 on core 1)
 
 void setup() {
-
-  char task_name[12];
   
-  // Configure Serial
   Serial.begin(115200);
-
-  // Wait a moment to start (so we don't miss Serial output)
-  vTaskDelay(1000 / portTICK_PERIOD_MS);
-  Serial.println();
-  Serial.println("---FreeRTOS Semaphore Alternate Solution---");
-
+  while (!Serial) {
+    delay(10); // will pause Zero, Leonardo, etc until serial console opens
+  }
   // Create mutexes and semaphores before starting tasks
-  bin_sem = xSemaphoreCreateBinary();
+  print_sem = xSemaphoreCreateBinary();
 
-  // Start producer tasks (wait for each to read argument)
-  for (int i = 0; i < num_prod_tasks; i++) {
-    sprintf(task_name, "Producer %i", i);
-    xTaskCreatePinnedToCore(producer,
-                            task_name,
-                            1024,
-                            (void *)&i,
-                            1,
-                            NULL,
-                            app_cpu);
-    xSemaphoreTake(bin_sem, portMAX_DELAY);
-  }
-
-  // Start consumer tasks
-  for (int i = 0; i < num_cons_tasks; i++) {
-    sprintf(task_name, "Consumer %i", i);
-    xTaskCreatePinnedToCore(consumer,
-                            task_name,
-                            1024,
-                            NULL,
-                            1,
-                            NULL,
-                            app_cpu);
-  }
-
-  // Notify that all tasks have been created
-  Serial.println("All tasks created");
+    xTaskCreatePinnedToCore(
+                          mpu_get_data,   /* Function to implement the task */
+                          "IMU", /* Name of the task */
+                          1024,      /* Stack size in words */
+                          NULL,       /* Task input parameter */
+                          3,          /* Priority of the task */
+                          NULL,       /* Task handle. */
+                          app_cpu);  /* Core where the task should run */
+  
+    xTaskCreatePinnedToCore(
+                          mpu_print_data,   /* Function to implement the task */
+                          "Print IMU", /* Name of the task */
+                          1024,      /* Stack size in words */
+                          NULL,       /* Task input parameter */
+                          3,          /* Priority of the task */
+                          NULL,       /* Task handle. */
+                          app_cpu);  /* Core where the task should run */
 }
 
-void loop() {
-  
-  // Do nothing but allow yielding to lower-priority tasks
-  vTaskDelay(1000 / portTICK_PERIOD_MS);
+void loop() 
+{
 }
