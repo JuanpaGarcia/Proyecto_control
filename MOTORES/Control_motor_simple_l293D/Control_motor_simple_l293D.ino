@@ -9,13 +9,21 @@
 
 //*****************************************************************************
 // Libraries
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
-#include <Wire.h>
+
 //*****************************************************************************
 
 //*****************************************************************************
 // Defines
+
+//Define motor pins and pwm channels
+#define ENABLE_1_PIN 35
+#define MOTOR_1_INPUT_1_PIN 34
+#define MOTOR_1_INPUT_2_PIN 33
+#define PWM_FREQUENCY 5000
+#define PWM_RESOLUTION 8
+#define MOTOR_1_PWM_CHANNEL 0
+
+
 #define DELAY_PERIOD_MS 5
 
 //*****************************************************************************
@@ -25,8 +33,6 @@
 // Global variables
 
 //mpu global variables
-Adafruit_MPU6050 mpu;
-sensors_event_t a, g, temp; //Get new sensor events with the readings accel and gyro
 
 //Semaphores
 static SemaphoreHandle_t print_sem;     // Waits for parameter to be read
@@ -36,7 +42,7 @@ static SemaphoreHandle_t print_sem;     // Waits for parameter to be read
 
 //*****************************************************************************
 // Functions
-void set_mpu6050(void);
+void set_motor(void);
 //*****************************************************************************
 
 
@@ -44,49 +50,16 @@ void set_mpu6050(void);
 // Tasks
 
 // Producer: write a given number of times to shared buffer
-void mpu_get_data(void *parameters) 
+void motor_test(void *parameters) 
 {
+  char pwm = 0;
   while(1)
   {
-    mpu.getEvent(&a, &g, &temp);
-    // Release the binary semaphore
-    xSemaphoreGive(print_sem);
+    
     vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
   }
 }
 
-void mpu_print_data(void *parameters) 
-{
-  while(1)
-  {
-    xSemaphoreTake(print_sem, portMAX_DELAY);
-    /* Print out the values */
-    Serial.print(a.acceleration.x);
-    Serial.print(",");
-    Serial.print(a.acceleration.y);
-    Serial.print(",");
-    Serial.print(a.acceleration.z);
-    Serial.print(", ");
-    Serial.print(g.gyro.x);
-    Serial.print(",");
-    Serial.print(g.gyro.y);
-    Serial.print(",");
-    Serial.print(g.gyro.z);
-    Serial.println("");
-    vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
-  }
-}
-
-// Consumer: continuously read from shared buffer
-void PID_motor_1(void *parameters) 
-{
-
-  while (1) 
-  {
-
-    vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
-  }
-}
 
 //*****************************************************************************
 // Main (runs as its own task with priority 1 on core 1)
@@ -99,14 +72,14 @@ void setup() {
     delay(10); // will pause Zero, Leonardo, etc until serial console opens
   }
 
-  //set the IMU to desired 
-  set_mpu6050();    
+  //set the motors pin and pwm  
+  set_motor();    
   
   // Create mutexes and semaphores before starting tasks
   print_sem = xSemaphoreCreateBinary();
   
     xTaskCreatePinnedToCore(
-                          mpu_get_data,   /* Function to implement the task */
+                          motor_test,   /* Function to implement the task */
                           "IMU", /* Name of the task */
                           1300,      /* Stack size in words */
                           NULL,       /* Task input parameter */
@@ -114,36 +87,24 @@ void setup() {
                           NULL,       /* Task handle. */
                           app_cpu);  /* Core where the task should run */
   
-    xTaskCreatePinnedToCore(
-                          mpu_print_data,   /* Function to implement the task */
-                          "Print IMU", /* Name of the task */
-                          1024,      /* Stack size in words */
-                          NULL,       /* Task input parameter */
-                          3,          /* Priority of the task */
-                          NULL,       /* Task handle. */
-                          app_cpu);  /* Core where the task should run */
-
-    
 }
 
 void loop() 
 {
 }
 
-void set_mpu6050(void)
+void set_motor(void)
 {
-    // Try to initialize!
-  if (!mpu.begin()) 
-  {
-    Serial.println("Failed to find MPU6050 chip");
-    while (1) 
-    {
-      delay(10);
-    }
-  }
-  mpu.setAccelerometerRange(MPU6050_RANGE_16_G);
-  mpu.setGyroRange(MPU6050_RANGE_250_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-  Serial.println("");
-  delay(100);  
+   // Try to initialize!
+  // sets the pins as outputs for motor 1:
+  pinMode(MOTOR_1_INPUT_1_PIN, OUTPUT);
+  pinMode(MOTOR_1_INPUT_2_PIN, OUTPUT);
+  pinMode(ENABLE_1_PIN, OUTPUT);
+  
+  // configure LED PWM functionalitites
+  ledcSetup(MOTOR_1_PWM_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);
+  
+  // attach the channel to the GPIO to be controlled
+  ledcAttachPin(ENABLE_1_PIN, MOTOR_1_PWM_CHANNEL);
+  
 }
