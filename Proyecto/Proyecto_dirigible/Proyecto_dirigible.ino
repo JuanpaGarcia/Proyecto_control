@@ -12,6 +12,7 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
+#include <Servo.h>
 //*****************************************************************************
 
 //*****************************************************************************
@@ -28,6 +29,11 @@
 #define MOTOR_1_PWM_CHANNEL 0
 #define MIN_PWM_FOR_DRIVER  3500
 #define MAX_PWM_FOR_DRIVER  9200
+
+//Servo Defines
+#define SERVO_PIN 25
+#define MIN_POS_SERVO 0
+#define MAX_POS_SERVO 180
 
 //*****************************************************************************
 
@@ -46,6 +52,10 @@ sensors_event_t a, g, temp; //Get new sensor events with the readings accel and 
 //motors global
 int pwm = MIN_PWM_FOR_DRIVER;
 
+// Servo variables
+Servo tail_servo;  
+int ang_pos_servo = 0;
+
 //Semaphores
 static SemaphoreHandle_t print_sem;     // Waits for parameter to be read
 
@@ -61,6 +71,7 @@ void set_mpu6050(void);
 void set_motor(void);
 void set_motor_forward(motors A);
 void set_motor_backward(motors A);
+void set_servo(void);
 
 //*****************************************************************************
 
@@ -106,8 +117,7 @@ void motor_test(void *parameters)
 {
   while(1)
   {
-    set_motor_forward(MOTOR_1);
-    
+    set_motor_forward(MOTOR_1);   
     vTaskDelay(6000 / portTICK_PERIOD_MS);
     set_motor_backward(MOTOR_1);
     vTaskDelay(6000 / portTICK_PERIOD_MS);
@@ -116,14 +126,41 @@ void motor_test(void *parameters)
 
 void motor_values(void *parameters) 
 {
+  char sentido = 0;
   while(1)
   {
     pwm += 500;
     if(MAX_PWM_FOR_DRIVER <= pwm)
     {
       pwm = MIN_PWM_FOR_DRIVER;
-    }L
+    }
     ledcWrite(MOTOR_1_PWM_CHANNEL, pwm); 
+
+/////////////////////////////////////Servo test//////////////////////
+    if(false == sentido)
+    {
+      ang_pos_servo+=15;
+      if(ang_pos_servo <= MAX_POS_SERVO)
+      {
+        tail_servo.write(ang_pos_servo);
+      }
+      else
+      {
+        sentido = true;
+      }
+    }
+    else
+    {
+      ang_pos_servo-=15;
+      if(ang_pos_servo >= MIN_POS_SERVO)
+      {
+        tail_servo.write(ang_pos_servo);
+      }
+      else
+      {
+        sentido = false;
+      }      
+    } 
     vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
@@ -137,7 +174,7 @@ void PID_motor_1(void *parameters)
   {
 
     vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
-  }L
+  }
 }
 
 //*****************************************************************************
@@ -156,6 +193,8 @@ void setup() {
 
   //set motors
   set_motor();
+  //Set Servo
+  set_servo();
   
   // Create mutexes and semaphores before starting tasks
   print_sem = xSemaphoreCreateBinary();
@@ -262,4 +301,10 @@ void set_motor_backward(motors A)
   {
   
   }
+}
+
+void set_servo(void)
+{
+    tail_servo.attach(SERVO_PIN);  // attaches the servo on pin 13 to the servo object
+    tail_servo.write(ang_pos_servo);  
 }
