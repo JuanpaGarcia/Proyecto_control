@@ -23,8 +23,8 @@
 #define PWM_FREQUENCY 30000
 #define PWM_RESOLUTION_BITS 16
 #define MOTOR_1_PWM_CHANNEL 0
-#define MIN_PWM_FOR_DRIVER  52000
-#define MAX_PWM_FOR_DRIVER  65536
+#define MIN_PWM_FOR_DRIVER  3500
+#define MAX_PWM_FOR_DRIVER  9200
 
 #define DELAY_PERIOD_MS 5
 
@@ -50,6 +50,8 @@ static SemaphoreHandle_t print_sem;     // Waits for parameter to be read
 //*****************************************************************************
 // Functions
 void set_motor(void);
+void set_motor_forward(motors A);
+
 //*****************************************************************************
 
 
@@ -72,11 +74,11 @@ void motor_values(void *parameters)
 {
   while(1)
   {
-    if(65500 <= pwm)
+    pwm += 500;
+    if(MAX_PWM_FOR_DRIVER <= pwm)
     {
-      pwm = 45000;
+      pwm = MIN_PWM_FOR_DRIVER;
     }
-    pwm += 1000;
     Serial.print("Duty cycle: ");
     Serial.println(pwm);
     ledcWrite(MOTOR_1_PWM_CHANNEL, pwm); 
@@ -97,8 +99,7 @@ void setup() {
 
   //set the motors pin and pwm  
   set_motor();
-  set_motor_forward(MOTOR_1);    
-  
+ 
   // Create mutexes and semaphores before starting tasks
   print_sem = xSemaphoreCreateBinary();
   
