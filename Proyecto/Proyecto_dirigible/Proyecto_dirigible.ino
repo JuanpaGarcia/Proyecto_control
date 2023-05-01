@@ -122,7 +122,7 @@ void motor_values(void *parameters)
     if(MAX_PWM_FOR_DRIVER <= pwm)
     {
       pwm = MIN_PWM_FOR_DRIVER;
-    }
+    }L
     ledcWrite(MOTOR_1_PWM_CHANNEL, pwm); 
     vTaskDelay(500 / portTICK_PERIOD_MS);
   }
@@ -137,7 +137,7 @@ void PID_motor_1(void *parameters)
   {
 
     vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
-  }
+  }L
 }
 
 //*****************************************************************************
