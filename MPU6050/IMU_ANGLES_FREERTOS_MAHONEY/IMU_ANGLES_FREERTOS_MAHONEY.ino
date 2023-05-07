@@ -12,14 +12,13 @@
 #include <Wire.h>
 #include <MPU6050.h>
 #include <math.h>
-#include <Servo.h>
+
 //*****************************************************************************
 
 //*****************************************************************************
 // Defines
-#define DELAY_PERIOD_MS 5
+#define DELAY_PERIOD_MS 5 //delay period for tasks in mili seconds
 
-//MIMU 
 // Definitions referenced Jeff Rowberg's MPU6050.h
 #define MPU6050_ADDRESS_AD0_LOW     0x68 // address pin low (GND), default for InvenSense evaluation board
 #define MPU6050_DEFAULT_ADDRESS     MPU6050_ADDRESS_AD0_LOW
@@ -46,32 +45,11 @@
 #define MPU6050_GYGAIN 16.384 // FS_SEL = 3, +/-2000degree/s, MPU6050_GYRO_FS_2000
 #define MPU6050_GZGAIN 16.384 // FS_SEL = 3, +/-2000degree/s, MPU6050_GYRO_FS_2000
 
-//i2c
 #define I2C_CLOCK_SPEED 400000
+
 #define SDA 21
 #define SCL 22
 
-//Define motor pins and pwm channels
-#define MIN_VOLTAGE_H_BRIDGE  2.4
-#define ENABLE_1_PIN 27
-#define MOTOR_1_INPUT_1_PIN 26
-#define MOTOR_1_INPUT_2_PIN 33
-#define PWM_FREQUENCY 30000
-#define PWM_RESOLUTION_BITS 16
-#define MOTOR_1_PWM_CHANNEL 0
-#define MIN_PWM_FOR_DRIVER  3500
-#define MAX_PWM_FOR_DRIVER  9200
-
-//Servo Defines
-#define SERVO_PIN 25
-#define MIN_POS_SERVO 0
-#define MAX_POS_SERVO 180
-
-//*****************************************************************************
-
-//*****************************************************************************
-// ENUM
-enum motors{MOTOR_1 =0, MOTOR_2};
 //*****************************************************************************
 
 //*****************************************************************************
@@ -93,15 +71,8 @@ float SelfTest[6];
 float gyroBias[3] = {0, 0, 0}, accelBias[3] = {0, 0, 0}; // Bias corrections for gyro and accelerometer
 
 float sample_period_ms = DELAY_PERIOD_MS * (0.001f);                              // integration interval for both filter schemes
-
-
-
-//motors global
-int pwm = MIN_PWM_FOR_DRIVER;
-
-// Servo variables
-Servo tail_servo;  
-int ang_pos_servo = 0;
+uint32_t lastUpdate = 0, firstUpdate = 0;         // used to calculate integration interval
+uint32_t Now = 0;                                 // used to calculate integration interval
 
 //Semaphores
 static SemaphoreHandle_t print_sem;     // Waits for parameter to be read
@@ -114,13 +85,6 @@ static SemaphoreHandle_t print_sem;     // Waits for parameter to be read
 //MPU6050
 void set_mpu6050(void);
 void calibrate_mpu6050(void);
-
-// MOTORS
-void set_motor(void);
-void set_motor_forward(motors A);
-void set_motor_backward(motors A);
-void set_servo(void);
-
 //*****************************************************************************
 
 
@@ -166,71 +130,6 @@ void mpu_print_data(void *parameters)
     vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
   }
 }
-
-void motor_test(void *parameters) 
-{
-  while(1)
-  {
-    set_motor_forward(MOTOR_1);   
-    vTaskDelay(6000 / portTICK_PERIOD_MS);
-    set_motor_backward(MOTOR_1);
-    vTaskDelay(6000 / portTICK_PERIOD_MS);
-  }
-}
-
-void motor_values(void *parameters) 
-{
-  char sentido = 0;
-  while(1)
-  {
-    pwm += 500;
-    if(MAX_PWM_FOR_DRIVER <= pwm)
-    {
-      pwm = MIN_PWM_FOR_DRIVER;
-    }
-    ledcWrite(MOTOR_1_PWM_CHANNEL, pwm); 
-
-/////////////////////////////////////Servo test//////////////////////
-    if(false == sentido)
-    {
-      ang_pos_servo+=15;
-      if(ang_pos_servo <= MAX_POS_SERVO)
-      {
-        tail_servo.write(ang_pos_servo);
-      }
-      else
-      {
-        sentido = true;
-      }
-    }
-    else
-    {
-      ang_pos_servo-=15;
-      if(ang_pos_servo >= MIN_POS_SERVO)
-      {
-        tail_servo.write(ang_pos_servo);
-      }
-      else
-      {
-        sentido = false;
-      }      
-    } 
-    vTaskDelay(500 / portTICK_PERIOD_MS);
-  }
-}
-
-
-// Consumer: continuously read from shared buffer
-void PID_motor_1(void *parameters) 
-{
-
-  while (1) 
-  {
-
-    vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
-  }
-}
-
 //*****************************************************************************
 // Main (runs as its own task with priority 1 on core 1)
 
@@ -238,18 +137,14 @@ void setup() {
   
   Serial.begin(115200);
   Wire.begin(SDA, SCL, I2C_CLOCK_SPEED);
-  while (!Serial) 
-  {
-    delay(10); // will pause Zero, Leonardo, etc until serial console opens
-  }
 
+    Serial.print("\t Sampling period");
+    Serial.println(sample_period_ms);
   //set the IMU to desired 
   set_mpu6050();  
-
-  //set motors
-  set_motor();
-  //Set Servo
-  set_servo();
+#ifdef CALIBRATE_IMU 
+  calibrate_mpu6050();
+#endif
   
   // Create mutexes and semaphores before starting tasks
   print_sem = xSemaphoreCreateBinary();
@@ -259,7 +154,7 @@ void setup() {
                           "IMU", /* Name of the task */
                           1300,      /* Stack size in words */
                           NULL,       /* Task input parameter */
-                          5,          /* Higher Priority */
+                          3,          /* Priority of the task */
                           NULL,       /* Task handle. */
                           app_cpu);  /* Core where the task should run */
   
@@ -271,81 +166,12 @@ void setup() {
                           3,          /* Priority of the task */
                           NULL,       /* Task handle. */
                           app_cpu);  /* Core where the task should run */
-                          
-    xTaskCreatePinnedToCore(
-                          motor_test,   /* Function to implement the task */
-                          "Direction", /* Name of the task */
-                          1300,      /* Stack size in words */
-                          NULL,       /* Task input parameter */
-                          3,          /* Priority of the task */
-                          NULL,       /* Task handle. */
-                          app_cpu);  /* Core where the task should run */
-
-    xTaskCreatePinnedToCore(
-                      motor_values,   /* Function to implement the task */
-                      "SPEED", /* Name of the task */
-                      1300,      /* Stack size in words */
-                      NULL,       /* Task input parameter */
-                      3,          /* Priority of the task */
-                      NULL,       /* Task handle. */
-                      app_cpu);  /* Core where the task should run */
-    
+                            
 }
 
 void loop() 
 {
 }
-
-void set_motor(void)
-{
-  // sets the pins as outputs for motor 1:
-  pinMode(MOTOR_1_INPUT_1_PIN, OUTPUT);
-  pinMode(MOTOR_1_INPUT_2_PIN, OUTPUT);
-  pinMode(ENABLE_1_PIN, OUTPUT);
-  
-  // configure LED PWM functionalitites
-  ledcSetup(MOTOR_1_PWM_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION_BITS);
-  
-  // attach the channel to the GPIO to be controlled
-  ledcAttachPin(ENABLE_1_PIN, MOTOR_1_PWM_CHANNEL);
-
-  //set outputs on LOW 
-  digitalWrite(MOTOR_1_INPUT_1_PIN, LOW);
-  digitalWrite(MOTOR_1_INPUT_2_PIN, LOW);
-}
-
-void set_motor_forward(motors A)
-{
-    if(MOTOR_1==A)
-  {
-    digitalWrite(MOTOR_1_INPUT_2_PIN, LOW);
-    digitalWrite(MOTOR_1_INPUT_1_PIN, HIGH);
-  }
-  else
-  {
-  
-  }
-}
-
-void set_motor_backward(motors A)
-{
-  if(MOTOR_1==A)
-  {
-    digitalWrite(MOTOR_1_INPUT_1_PIN, LOW);
-    digitalWrite(MOTOR_1_INPUT_2_PIN, HIGH);
-  }
-  else
-  {
-  
-  }
-}
-
-void set_servo(void)
-{
-    tail_servo.attach(SERVO_PIN);  // attaches the servo on pin 13 to the servo object
-    tail_servo.write(ang_pos_servo);  
-}
-
 
 void set_mpu6050(void)
 {
