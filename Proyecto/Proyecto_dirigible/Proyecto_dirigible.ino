@@ -82,26 +82,33 @@ volatile float twoKp = twoKpDef;                      // 2 * proportional gain (
 volatile float twoKi = twoKiDef;                      // 2 * integral gain (Ki)
 volatile float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;          // quaternion of sensor frame relative to auxiliary frame
 volatile float integralFBx = 0.0f,  integralFBy = 0.0f, integralFBz = 0.0f; // integral error terms scaled by Ki
-
-long sampling_timer;
 int16_t AcX, AcY, AcZ, Tmp, GyX, GyY, GyZ;
 float axg, ayg, azg, gxrs, gyrs, gzrs;
 float roll, pitch, yaw;
-
 float SelfTest[6];
-
 float gyroBias[3] = {0, 0, 0}, accelBias[3] = {0, 0, 0}; // Bias corrections for gyro and accelerometer
-
 float sample_period_ms = DELAY_PERIOD_MS * (0.001f);                              // integration interval for both filter schemes
-
-
 
 //motors global
 int pwm = MIN_PWM_FOR_DRIVER;
 
+
 // Servo variables
 Servo tail_servo;  
 int ang_pos_servo = 0;
+
+//PID 1  VARIABLES
+float PID_1_kp = 8; //Mine was 8_
+float PID_1_ki = 0.2; //Mine was 0.2
+float PID_1_kd = 3100; //Mine was 3100
+float reference = 0;           //Should be pitch
+float angle_error_PID_1 = 0.0;
+float previous_angle_error_PID_1 = 0.0;
+float PID_1_p, PID_1_i, PID_1_d, PID_1_total;
+int u_k_PID_1 = MIN_PWM_FOR_DRIVER;
+
+//Float references
+float roll_reference=0, pitch_reference=0, yaw_reference=0;
 
 //Semaphores
 static SemaphoreHandle_t print_sem;     // Waits for parameter to be read
@@ -219,14 +226,54 @@ void motor_values(void *parameters)
   }
 }
 
-
-// Consumer: continuously read from shared buffer
-void PID_motor_1(void *parameters) 
+//calculate references for controllers
+void References_task(void *parameters) 
 {
-
   while (1) 
   {
+    roll_reference = 5;
+    pitch_reference = 6;
+    yaw_reference = 7;
+    vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
+  }
+}
 
+void PID_motor_DC_1(void *parameters) 
+{
+  while (1) 
+  {
+    angle_error_PID_1 = pitch_reference - pitch;
+    PID_1_p = PID_1_kp * angle_error_PID_1;
+    PID_1_d = PID_1_kd * ( (angle_error_PID_1 - previous_angle_error_PID_1) /sample_period_ms );
+
+    if(-3 < distance_error && distance_error < 3)
+    {
+      PID_i = PID_i + (PID_1_kd * distance_error);
+    }
+    else
+    {
+      PID_i = 0;
+    }
+
+    PID_1_total = PID_p + PID_i + PID_d; 
+
+    //change motor spin
+    if(0 >= PID_1_total)
+    {
+      set_motor_forward(MOTOR_1);
+      u_k_PID_1 = PID_1_total;
+    }
+    else
+    {
+      set_motor_backward(MOTOR_1);
+      u_k_PID_1 = PID_1_total*-1;
+    }
+    
+    if (MAX_PWM_FOR_DRIVER <= u_k_PID_1) 
+    { 
+      u_k_PID_1 = MAX_PWM_FOR_DRIVER;
+    }  
+    previous_angle_error_PID_1 = angle_error_PID_1;
     vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
   }
 }
@@ -255,7 +302,7 @@ void setup() {
   print_sem = xSemaphoreCreateBinary();
   
     xTaskCreatePinnedToCore(
-                          mpu_get_data,   /* Function to implement the task */
+                          mpu_get_data,   /* Function to implement the task to get the MPU data an conver it to navegation angles */
                           "IMU", /* Name of the task */
                           1300,      /* Stack size in words */
                           NULL,       /* Task input parameter */
@@ -264,7 +311,7 @@ void setup() {
                           app_cpu);  /* Core where the task should run */
   
     xTaskCreatePinnedToCore(
-                          mpu_print_data,   /* Function to implement the task */
+                          mpu_print_data,   /* Function to implement the task print the navegation angles */
                           "Print IMU", /* Name of the task */
                           1024,      /* Stack size in words */
                           NULL,       /* Task input parameter */
@@ -273,7 +320,7 @@ void setup() {
                           app_cpu);  /* Core where the task should run */
                           
     xTaskCreatePinnedToCore(
-                          motor_test,   /* Function to implement the task */
+                          References_task,   /* Function to implement the task to make references por PID controler DC motor*/
                           "Direction", /* Name of the task */
                           1300,      /* Stack size in words */
                           NULL,       /* Task input parameter */
@@ -282,7 +329,7 @@ void setup() {
                           app_cpu);  /* Core where the task should run */
 
     xTaskCreatePinnedToCore(
-                      motor_values,   /* Function to implement the task */
+                      PID_motor_DC_1,   /* Function to implement the task PID controles por DC motor for pitch control*/
                       "SPEED", /* Name of the task */
                       1300,      /* Stack size in words */
                       NULL,       /* Task input parameter */
