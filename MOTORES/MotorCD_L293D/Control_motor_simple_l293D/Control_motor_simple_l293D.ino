@@ -17,9 +17,9 @@
 
 //Define motor pins and pwm channels
 #define MIN_VOLTAGE_H_BRIDGE  2.4
-#define ENABLE_1_PIN 27
+#define ENABLE_1_PIN 33 
 #define MOTOR_1_INPUT_1_PIN 26
-#define MOTOR_1_INPUT_2_PIN 33
+#define MOTOR_1_INPUT_2_PIN 27
 #define PWM_FREQUENCY 30000
 #define PWM_RESOLUTION_BITS 16
 #define MOTOR_1_PWM_CHANNEL 0
@@ -39,7 +39,7 @@ enum motors{MOTOR_1 =0, MOTOR_2};
 //mpu global variables
 
 //motors global
-int pwm = MIN_PWM_FOR_DRIVER;
+int pwm = MIN_PWM_FOR_DRIVER*2;
 
 //Semaphores
 static SemaphoreHandle_t print_sem;     // Waits for parameter to be read
@@ -63,10 +63,10 @@ void motor_test(void *parameters)
   while(1)
   {
     set_motor_forward(MOTOR_1);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
     
-    vTaskDelay(6000 / portTICK_PERIOD_MS);
     set_motor_backward(MOTOR_1);
-    vTaskDelay(6000 / portTICK_PERIOD_MS);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -74,6 +74,7 @@ void motor_values(void *parameters)
 {
   while(1)
   {
+    /*
     pwm += 500;
     if(MAX_PWM_FOR_DRIVER <= pwm)
     {
@@ -82,6 +83,7 @@ void motor_values(void *parameters)
     Serial.print("Duty cycle: ");
     Serial.println(pwm);
     ledcWrite(MOTOR_1_PWM_CHANNEL, pwm); 
+    */
     vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
@@ -143,6 +145,7 @@ void set_motor(void)
   //set outputs on LOW 
   digitalWrite(MOTOR_1_INPUT_1_PIN, LOW);
   digitalWrite(MOTOR_1_INPUT_2_PIN, LOW);
+  ledcWrite(MOTOR_1_PWM_CHANNEL, pwm); 
 }
 
 void set_motor_forward(motors A)
