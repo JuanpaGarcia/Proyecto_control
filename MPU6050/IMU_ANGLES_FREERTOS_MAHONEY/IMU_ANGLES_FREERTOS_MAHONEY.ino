@@ -58,22 +58,23 @@ void mpu_get_data(void *parameters)
 
 void mpu_print_data(void *parameters) 
 {
+  delay(3000);
+  Serial.println("Yaw Roll Pitch"); 
   while(1)
   {
     xSemaphoreTake(print_sem, portMAX_DELAY);
     /* Print out the values */
- 
     //Serial.print("Heading(Yaw):");             //To read out the Heading (Yaw)
     Serial.print(float(myEulerData.h) / 16.00);       //Convert to degrees
-    Serial.print(",");
+    Serial.print("\t");
  
     //Serial.print("Roll:");                 //To read out the Roll
     Serial.print(float(myEulerData.r) / 16.00);       //Convert to degrees
-    Serial.print(",");
+    Serial.print("\t");
  
     //Serial.print("Pitch:");                //To read out the Pitch
-    Serial.print(float(myEulerData.p) / 16.00);       //Convert to degrees
-    Serial.println("");
+    Serial.println(float(myEulerData.p) / 16.00);       //Convert to degrees
+
     
       vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
   }
@@ -111,8 +112,7 @@ void setup() {
                           NULL,       /* Task input parameter */
                           3,          /* Priority of the task */
                           NULL,       /* Task handle. */
-                          app_cpu);  /* Core where the task should run */
-                            
+                          app_cpu);  /* Core where the task should run */      
 }
 
 void loop() 

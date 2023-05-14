@@ -30,9 +30,9 @@ struct bno055_euler myEulerData; //Structure to hold the Euler data
 
 //Define motor pins and pwm channels
 #define MIN_VOLTAGE_H_BRIDGE  2.4
-#define ENABLE_1_PIN 27
-#define MOTOR_1_INPUT_1_PIN 26
-#define MOTOR_1_INPUT_2_PIN 33
+#define ENABLE_1_PIN 33 
+#define MOTOR_1_INPUT_1_PIN 27
+#define MOTOR_1_INPUT_2_PIN 26
 #define PWM_FREQUENCY 30000
 #define PWM_RESOLUTION_BITS 16
 #define MOTOR_1_PWM_CHANNEL 0
@@ -70,8 +70,13 @@ float PID_1_kd = 3100; //Mine was 3100
 float reference = 0;           //Should be pitch
 float angle_error_PID_1 = 0.0;
 float previous_angle_error_PID_1 = 0.0;
-float PID_1_p, PID_1_i, PID_1_d, PID_1_total;
+float PID_1_p = 0.0, PID_1_i = 0.0, PID_1_d = 0.0, PID_1_total = 0.0;
 int u_k_PID_1 = MIN_PWM_FOR_DRIVER;
+
+//IMU ANGLES in degrees
+float roll = 5;
+float pitch = 6;
+float yaw= 7;
 
 //ANGLES REFERENCE VARIABLES
 float roll_reference = 5;
@@ -126,16 +131,18 @@ void IMU_print_data(void *parameters)
     xSemaphoreTake(print_sem, portMAX_DELAY);
 
     //Serial.print("Heading(Yaw):");             //To read out the Heading (Yaw)
-    Serial.print(float(myEulerData.h) / 16.00);       //Convert to degrees
-    Serial.print(",");
+    yaw = float(myEulerData.h) / 16.00;
+    //Serial.print(yaw);       //Convert to degrees
+    //Serial.print("\t");
  
     //Serial.print("Roll:");                 //To read out the Roll
-    Serial.print(float(myEulerData.r) / 16.00);       //Convert to degrees
-    Serial.print(",");
+    roll = float(myEulerData.r) / 16.00;
+    Serial.println(roll);       //Convert to degrees
+    //Serial.print("\t");
  
     //Serial.print("Pitch:");                //To read out the Pitch
-    Serial.print(float(myEulerData.p) / 16.00);       //Convert to degrees
-    Serial.println("");
+    pitch = float(myEulerData.p) / 16.00;
+    //Serial.println(pitch);       //Convert to degrees
     
     vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
   }
@@ -165,32 +172,32 @@ void References_task(void *parameters)
 {
   while (1) 
   {
-    roll_reference = 5;
-    pitch_reference = 6;
-    yaw_reference = 7;
+    roll_reference = 0;   //forward and backwar tilt, z,x
+    pitch_reference = 6;  // NOT USED z,y
+    yaw_reference = 7;    // x,y angle
     vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
   }
 }
 
-void PID_motor_DC_1(void *parameters) 
+void PID_motor_DC_1(void *parameters) // 
 {
   while (1) 
   {
     
-    angle_error_PID_1 = pitch_reference - (float(myEulerData.p) / 16.00);
+    angle_error_PID_1 = roll_reference  - roll;
     PID_1_p = PID_1_kp * angle_error_PID_1;
     PID_1_d = PID_1_kd * ( (angle_error_PID_1 - previous_angle_error_PID_1) / DELAY_PERIOD_MS );
 
-    if(-3 < distance_error && distance_error < 3)
+    if(-7 < angle_error_PID_1 && angle_error_PID_1 < 7)
     {
-      PID_i = PID_i + (PID_1_kd * distance_error);
+      PID_1_i = PID_1_i + (PID_1_kd * angle_error_PID_1);
     }
     else
     {
-      PID_i = 0;
+      PID_1_i = 0;
     }
 
-    PID_1_total = PID_p + PID_i + PID_d; 
+    PID_1_total = PID_1_p + PID_1_i + PID_1_d; 
 
     //change motor spin
     if(0 >= PID_1_total)
@@ -210,7 +217,6 @@ void PID_motor_DC_1(void *parameters)
     }  
     previous_angle_error_PID_1 = angle_error_PID_1;
     
-    int a = 2;
     vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
   }
 }
