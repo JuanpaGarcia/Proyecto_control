@@ -68,18 +68,20 @@ Servo tail_servo;
 int ang_pos_servo = 90;
 
 //PID 1  VARIABLES
-float PID_1_kp = 200; //Mine was 8_
-//float PID_1_ki = 5; //Mine was 0.2
-float PID_1_kd = 1500; //Mine was 3100
+float PID_1_kp = 15; 
+float PID_1_ki = 1; 
+float PID_1_kd = 0.18; 
 float reference = 0;           //Should be pitch
 float angle_error_PID_1 = 0.0;
 float previous_angle_error_PID_1 = 0.0;
 float PID_1_p = 0.0, PID_1_i = 0.0, PID_1_d = 0.0, PID_1_total = 0.0;
 int u_k_PID_1 = MIN_PWM_FOR_DRIVER;
 
+
+
 //PID 2  VARIABLES
 float PID_2_kp = 200; //Mine was 8_
-//float PID_2_ki = 5; //Mine was 0.2
+//float PID_2_ki = 8; //Mine was 0.2
 float PID_2_kd = 1500; //Mine was 3100
 float angle_error_PID_2 = 0.0;
 float previous_angle_error_PID_2 = 0.0;
@@ -221,18 +223,23 @@ void PID_motor_DC_1(void *parameters) //
   {
     //xSemaphoreTake(PID_1_sem, portMAX_DELAY);
     angle_error_PID_1 = pitch_reference  - pitch;
+    Serial.println(angle_error_PID_1);
     PID_1_p = PID_1_kp * angle_error_PID_1;
     PID_1_d = PID_1_kd * ( (angle_error_PID_1 - previous_angle_error_PID_1) / DELAY_FLOAT_IN_SECONDS );
-
+/*
     if(-3 < angle_error_PID_1 && angle_error_PID_1 < 3)
     {
+      
+    }
+    */
       PID_1_i = PID_1_i + (PID_1_kd * angle_error_PID_1);
+      /*
     }
     else
     {
       PID_1_i = 0;
     }
-
+*/
     PID_1_total = PID_1_p + PID_1_i + PID_1_d; 
     //Serial.print(PID_1_total);
     //Serial.print("\t");
@@ -248,17 +255,17 @@ void PID_motor_DC_1(void *parameters) //
       u_k_PID_1 = PID_1_total*-1;
     }
 
-    if (MAX_PWM_FOR_DRIVER <= u_k_PID_1) 
+    if (150 <= u_k_PID_1) 
     { 
-      u_k_PID_1 = MAX_PWM_FOR_DRIVER;
+      u_k_PID_1 = 150;
     }
     
     //Serial.println(u_k_PID_1);
 
 
-    mapped_value = map(u_k_PID_1, 0, MAX_PWM_FOR_DRIVER, MIN_PWM_FOR_DRIVER -500 ,MAX_PWM_FOR_DRIVER );
+    mapped_value = map(u_k_PID_1, 0, 150, MIN_PWM_FOR_DRIVER -500 ,MAX_PWM_FOR_DRIVER );
 
-     Serial.println(mapped_value);
+    //Serial.println(mapped_value);
     ledcWrite(MOTOR_1_PWM_CHANNEL, mapped_value); 
     previous_angle_error_PID_1 = angle_error_PID_1;
     
@@ -287,11 +294,16 @@ void PID_tail(void *parameters) //
 
     PID_2_total = PID_2_p + PID_2_i + PID_2_d; 
 
-    PID_2_total = map(PID_total, -150, 150, 0, 150);
+    PID_2_total = map(PID_2_total, -150, 150, 0, 150);
   
-    if(PID_2_total < 30){PID_2_total = 30;}
-    if(PID_2_total > 160) {PID_2_total = 150; } 
-    
+    if(PID_2_total < 30)
+    {
+      PID_2_total = 30;
+    }
+    if(PID_2_total > 160) 
+    {
+      PID_2_total = 150; 
+    }  
     //Serial.println(u_k_PID_1);
 
     ang_pos_servo = PID_2_total;
