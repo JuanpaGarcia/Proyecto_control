@@ -18,8 +18,8 @@
 //Define motor pins and pwm channels
 #define MIN_VOLTAGE_H_BRIDGE  2.4
 #define ENABLE_1_PIN 33 
-#define MOTOR_1_INPUT_1_PIN 27
-#define MOTOR_1_INPUT_2_PIN 26
+#define MOTOR_1_INPUT_1_PIN 26
+#define MOTOR_1_INPUT_2_PIN 27
 #define PWM_FREQUENCY 30000
 #define PWM_RESOLUTION_BITS 16
 #define MOTOR_1_PWM_CHANNEL 0
@@ -63,10 +63,10 @@ void motor_test(void *parameters)
   while(1)
   {
     set_motor_forward(MOTOR_1);
-    vTaskDelay(3000 / portTICK_PERIOD_MS);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
     
     set_motor_backward(MOTOR_1);
-    vTaskDelay(3000 / portTICK_PERIOD_MS);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 

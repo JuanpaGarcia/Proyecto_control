@@ -9,7 +9,9 @@
 
 //*****************************************************************************
 // Libraries
-#include "BNO055_support.h"     //Contains the bridge code between the API and Arduino
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BNO055.h>
+#include <utility/imumaths.h>
 #include <Wire.h>
 #include <Servo.h>
 //*****************************************************************************
@@ -17,6 +19,7 @@
 //*****************************************************************************
 // Defines
 #define DELAY_PERIOD_MS 5
+#define DELAY_FLOAT_IN_SECONDS (0.005f)
 #define SWEEP_SERVO_DELAY_MS 750
 
 //i2c
@@ -24,9 +27,6 @@
 #define SDA 21
 #define SCL 22
 
-//IMU global variables
-struct bno055_t myBNO;
-struct bno055_euler myEulerData; //Structure to hold the Euler data
 
 //Define motor pins and pwm channels
 #define MIN_VOLTAGE_H_BRIDGE  2.4
@@ -50,6 +50,10 @@ struct bno055_euler myEulerData; //Structure to hold the Euler data
 //*****************************************************************************
 // ENUM
 enum motors{MOTOR_1 =0, MOTOR_2};
+// Check I2C device address and correct line below (by default address is 0x29 or 0x28)
+//                                   id, address
+Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
+
 //*****************************************************************************
 
 //*****************************************************************************
@@ -64,14 +68,26 @@ Servo tail_servo;
 int ang_pos_servo = 90;
 
 //PID 1  VARIABLES
-float PID_1_kp = 8; //Mine was 8_
-float PID_1_ki = 0.2; //Mine was 0.2
-float PID_1_kd = 3100; //Mine was 3100
+float PID_1_kp = 200; //Mine was 8_
+//float PID_1_ki = 5; //Mine was 0.2
+float PID_1_kd = 1500; //Mine was 3100
 float reference = 0;           //Should be pitch
 float angle_error_PID_1 = 0.0;
 float previous_angle_error_PID_1 = 0.0;
 float PID_1_p = 0.0, PID_1_i = 0.0, PID_1_d = 0.0, PID_1_total = 0.0;
 int u_k_PID_1 = MIN_PWM_FOR_DRIVER;
+
+//PID 2  VARIABLES
+float PID_2_kp = 200; //Mine was 8_
+//float PID_2_ki = 5; //Mine was 0.2
+float PID_2_kd = 1500; //Mine was 3100
+float angle_error_PID_2 = 0.0;
+float previous_angle_error_PID_2 = 0.0;
+float PID_2_p = 0.0, PID_2_i = 0.0, PID_2_d = 0.0, PID_2_total = 0.0;
+int u_k_PID_2 = MIN_PWM_FOR_DRIVER;
+
+//IMU ADAFRUIT LIBRARY
+sensors_event_t event;
 
 //IMU ANGLES in degrees
 float roll = 5;
@@ -85,6 +101,8 @@ float yaw_reference = 7;
 
 //Semaphores
 static SemaphoreHandle_t print_sem;     // Waits for parameter to be read
+static SemaphoreHandle_t PID_1_sem;     // Waits for parameter to be read
+
 
 //*****************************************************************************
 
@@ -116,33 +134,49 @@ void IMU_get_data(void *parameters)
 {
   while(1)
   {  
-    bno055_read_euler_hrp(&myEulerData);            //Update Euler data into the structure
+    bno.getEvent(&event);
+    yaw = (float)event.orientation.x;
+    pitch = (float)event.orientation.y;
+    roll = (float)event.orientation.z;
     
     // Release the binary semaphore
     xSemaphoreGive(print_sem);
+    xSemaphoreGive(PID_1_sem);
     vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
   }
 }
 
 void IMU_print_data(void *parameters) 
 {
+  //delay(4000);
+  //Serial.println("Pitch Pitch_reference uk");
   while(1)
   {
     xSemaphoreTake(print_sem, portMAX_DELAY);
 
-    //Serial.print("Heading(Yaw):");             //To read out the Heading (Yaw)
-    yaw = float(myEulerData.h) / 16.00;
-    //Serial.print(yaw);       //Convert to degrees
-    //Serial.print("\t");
- 
-    //Serial.print("Roll:");                 //To read out the Roll
-    roll = float(myEulerData.r) / 16.00;
-    Serial.println(roll);       //Convert to degrees
-    //Serial.print("\t");
- 
-    //Serial.print("Pitch:");                //To read out the Pitch
-    pitch = float(myEulerData.p) / 16.00;
-    //Serial.println(pitch);       //Convert to degrees
+    /*
+    Serial.print(yaw);
+    Serial.print(F(" "));
+    */
+
+    
+//    Serial.print(pitch);
+//    Serial.print(F(" "));
+
+    /*
+    Serial.print(roll);
+    Serial.print(F(" "));
+    */
+
+    //References
+    //Serial.println(yaw_reference);
+    //Serial.print(F(" "));
+    
+//    Serial.print(pitch_reference);
+//    Serial.print(F(" "));
+    
+    //Serial.println(roll_reference);
+    //Serial.print(F(" "));
     
     vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
   }
@@ -153,6 +187,7 @@ void servo_angular_velocity_task(void *parameters)
   static bool turn = false;
   while(1)
   {
+    
     if(false == turn)
     {
       tail_servo.write(ang_pos_servo - SWEEP_SPAN); 
@@ -181,14 +216,15 @@ void References_task(void *parameters)
 
 void PID_motor_DC_1(void *parameters) // 
 {
+  float mapped_value = 0.0;
   while (1) 
   {
-    
-    angle_error_PID_1 = roll_reference  - roll;
+    //xSemaphoreTake(PID_1_sem, portMAX_DELAY);
+    angle_error_PID_1 = pitch_reference  - pitch;
     PID_1_p = PID_1_kp * angle_error_PID_1;
-    PID_1_d = PID_1_kd * ( (angle_error_PID_1 - previous_angle_error_PID_1) / DELAY_PERIOD_MS );
+    PID_1_d = PID_1_kd * ( (angle_error_PID_1 - previous_angle_error_PID_1) / DELAY_FLOAT_IN_SECONDS );
 
-    if(-7 < angle_error_PID_1 && angle_error_PID_1 < 7)
+    if(-3 < angle_error_PID_1 && angle_error_PID_1 < 3)
     {
       PID_1_i = PID_1_i + (PID_1_kd * angle_error_PID_1);
     }
@@ -198,9 +234,10 @@ void PID_motor_DC_1(void *parameters) //
     }
 
     PID_1_total = PID_1_p + PID_1_i + PID_1_d; 
-
+    //Serial.print(PID_1_total);
+    //Serial.print("\t");
     //change motor spin
-    if(0 >= PID_1_total)
+    if(0 <= PID_1_total)
     {
       set_motor_forward(MOTOR_1);
       u_k_PID_1 = PID_1_total;
@@ -210,12 +247,57 @@ void PID_motor_DC_1(void *parameters) //
       set_motor_backward(MOTOR_1);
       u_k_PID_1 = PID_1_total*-1;
     }
-    
+
     if (MAX_PWM_FOR_DRIVER <= u_k_PID_1) 
     { 
       u_k_PID_1 = MAX_PWM_FOR_DRIVER;
-    }  
+    }
+    
+    //Serial.println(u_k_PID_1);
+
+
+    mapped_value = map(u_k_PID_1, 0, MAX_PWM_FOR_DRIVER, MIN_PWM_FOR_DRIVER -500 ,MAX_PWM_FOR_DRIVER );
+
+     Serial.println(mapped_value);
+    ledcWrite(MOTOR_1_PWM_CHANNEL, mapped_value); 
     previous_angle_error_PID_1 = angle_error_PID_1;
+    
+    vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
+  }
+}
+
+void PID_tail(void *parameters) // 
+{
+  float mapped_value = 0.0;
+  while (1) 
+  {
+    //xSemaphoreTake(PID_1_sem, portMAX_DELAY);
+    angle_error_PID_2 = yaw_reference  - yaw;
+    PID_2_p = PID_2_kp * angle_error_PID_2;
+    PID_2_d = PID_2_kd * ( (angle_error_PID_2 - previous_angle_error_PID_2) / DELAY_FLOAT_IN_SECONDS );
+
+    if(-3 < angle_error_PID_2 && angle_error_PID_2 < 3)
+    {
+      PID_2_i = PID_2_i + (PID_2_kd * angle_error_PID_2);
+    }
+    else
+    {
+      PID_2_i = 0;
+    }
+
+    PID_2_total = PID_2_p + PID_2_i + PID_2_d; 
+
+    PID_2_total = map(PID_total, -150, 150, 0, 150);
+  
+    if(PID_2_total < 30){PID_2_total = 30;}
+    if(PID_2_total > 160) {PID_2_total = 150; } 
+    
+    //Serial.println(u_k_PID_1);
+
+    ang_pos_servo = PID_2_total;
+    tail_servo.write(ang_pos_servo);
+    
+    previous_angle_error_PID_2 = angle_error_PID_2;
     
     vTaskDelay(DELAY_PERIOD_MS / portTICK_PERIOD_MS);
   }
@@ -243,13 +325,14 @@ void setup() {
   
   // Create mutexes and semaphores before starting tasks
   print_sem = xSemaphoreCreateBinary();
+  PID_1_sem = xSemaphoreCreateBinary();
   
     xTaskCreatePinnedToCore(
                           IMU_get_data,   /* Function to implement the task to get the MPU data an conver it to navegation angles */
                           "IMU", /* Name of the task */
                           1300,      /* Stack size in words */
                           NULL,       /* Task input parameter */
-                          5,          /* Higher Priority */
+                          4,          /* Higher Priority */
                           NULL,       /* Task handle. */
                           app_cpu);  /* Core where the task should run */
   
@@ -265,7 +348,7 @@ void setup() {
     xTaskCreatePinnedToCore(
                           References_task,   /* Function to implement the task to make references por PID controler DC motor*/
                           "Direction", /* Name of the task */
-                          600,      /* Stack size in words */
+                          900,      /* Stack size in words */
                           NULL,       /* Task input parameter */
                           3,          /* Priority of the task */
                           NULL,       /* Task handle. */
@@ -274,16 +357,16 @@ void setup() {
     xTaskCreatePinnedToCore(
                       PID_motor_DC_1,   /* Function to implement the task PID controles por DC motor for pitch control*/
                       "SPEED", /* Name of the task */
-                      600,      /* Stack size in words */
+                      900,      /* Stack size in words */
                       NULL,       /* Task input parameter */
-                      3,          /* Priority of the task */
+                      4,          /* Priority of the task */
                       NULL,       /* Task handle. */
                       app_cpu);  /* Core where the task should run */ 
 
     xTaskCreatePinnedToCore(
                       servo_angular_velocity_task,   /* Function to implement the task to get the MPU data an conver it to navegation angles */
                       "Tail movement", /* Name of the task */
-                      600,      /* Stack size in words */
+                      900,      /* Stack size in words */
                       NULL,       /* Task input parameter */
                       3,          /* Higher Priority */
                       NULL,       /* Task handle. */
@@ -349,11 +432,16 @@ void set_servo(void)
 
 void set_BNO055(void)
 {
-    //Initialization of the BNO055
-  BNO_Init(&myBNO); //Assigning the structure to hold information about the device
- 
-  //Configuration to NDoF mode
-  bno055_set_operation_mode(OPERATION_MODE_NDOF);
+  ///////////////
+
+    if(!bno.begin())
+  {
+    /* There was a problem detecting the BNO055 ... check your connections */
+    Serial.print("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
+    while(1);
+  }
+  /* Use external crystal for better accuracy */
+  bno.setExtCrystalUse(true);
  
   delay(1);
 }
